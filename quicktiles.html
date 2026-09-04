@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Quick Tiles</title>
+  <link rel="icon" type="image/png" href="tileicon.png">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #121212;
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      margin: 0;
+      padding: 20px;
+    }
+
+    h1 {
+      margin-bottom: 5px;
+    }
+
+    #controls {
+      margin-bottom: 15px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      background: #1e1e1e;
+      padding: 10px 20px;
+      border-radius: 8px;
+    }
+
+    #info-panel {
+      font-size: 1.1rem;
+      margin-bottom: 15px;
+      height: 25px;
+      font-weight: bold;
+      color: #ffd700;
+    }
+
+    #grid {
+      display: grid;
+      grid-template-columns: repeat(25, 24px);
+      grid-template-rows: repeat(25, 24px);
+      gap: 2px;
+      background: #2a2a2a;
+      padding: 5px;
+      border-radius: 6px;
+    }
+
+    .cell {
+      width: 24px;
+      height: 24px;
+      background: #181818;
+      border-radius: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      font-size: 12px;
+      user-select: none;
+    }
+
+    .cell.placed {
+      background: #4a4a4a;
+    }
+
+    .cell.valid-place {
+      background: #2e5a2e;
+      cursor: pointer;
+    }
+
+    .cell.valid-place:hover {
+      background: #3e7a3e;
+    }
+
+    .cell.p1 {
+      background: #3498db !important;
+      color: white;
+    }
+
+    .cell.p2 {
+      background: #e74c3c !important;
+      color: white;
+    }
+
+    .cell.valid-move {
+      background: #f1c40f !important;
+      cursor: pointer;
+    }
+
+    .cell.valid-dash {
+      background: #0055ff !important;
+      cursor: pointer;
+    }
+
+    button {
+      padding: 8px 16px;
+      background: #3498db;
+      border: none;
+      color: white;
+      font-weight: bold;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background: #2980b9;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Quick Tiles</h1>
+
+  <div id="controls">
+    <label>Tiles: <span id="tile-val">30</span>
+      <input type="range" id="tile-slider" min="20" max="50" value="30">
+    </label>
+    <label>Mode:
+      <select id="mode-select">
+        <option value="cpu">VS CPU</option>
+        <option value="2p">Pass & Play</option>
+      </select>
+    </label>
+    <button id="start-btn">Start Game</button>
+  </div>
+
+  <div id="info-panel">Click 'Start Game' to begin.</div>
+
+  <div id="grid"></div>
+
+  <script>
+    const GRID_SIZE = 25;
+    const gridEl = document.getElementById('grid');
+    const tileSlider = document.getElementById('tile-slider');
+    const tileVal = document.getElementById('tile-val');
+    const modeSelect = document.getElementById('mode-select');
+    const startBtn = document.getElementById('start-btn');
+    const infoPanel = document.getElementById('info-panel');
+
+    let maxTiles = 30;
+    let placedTiles = [];
+    let phase = 'setup'; // 'setup', 'placement', 'movement', 'gameover'
+    let currentPlayer = 1; // 1 or 2
+    let isVsCpu = true;
+
+    let p1Pos = null;
+    let p2Pos = null;
+
+    tileSlider.addEventListener('input', (e) => {
+      tileVal.textContent = e.target.value;
+    });
+
+    startBtn.addEventListener('click', startGame);
+
+    function startGame() {
+      maxTiles = parseInt(tileSlider.value);
+      isVsCpu = modeSelect.value === 'cpu';
+      placedTiles = [];
+      p1Pos = null;
+      p2Pos = null;
+      currentPlayer = 1;
+      phase = 'placement';
+
+      // Center tile auto-placed
+      const center = { r: 12, c: 12 };
+      placedTiles.push(center);
+
+      infoPanel.textContent = `Placement Phase: Player 1's turn to place a tile (${placedTiles.length}/${maxTiles})`;
+      render();
+    }
+
+    function getKey(r, c) { return `${r},${c}`; }
+
+    function getNeighbors(r, c) {
+      return [
+        { r: r - 1, c: c },
+        { r: r + 1, c: c },
+        { r: r, c: c - 1 },
+        { r: r, c: c + 1 }
+      ].filter(p => p.r >= 0 && p.r < GRID_SIZE && p.c >= 0 && p.c < GRID_SIZE);
+    }
+
+    function isPlaced(r, c) {
+      return placedTiles.some(t => t.r === r && t.c === c);
+    }
+
+    function getValidPlacements() {
+      const valid = new Set();
+      placedTiles.forEach(tile => {
+        getNeighbors(tile.r, tile.c).forEach(n => {
+          if (!isPlaced(n.r, n.c)) {
+            valid.add(getKey(n.r, n.c));
+          }
+        });
+      });
+      return valid;
+    }
+
+    function placeTile(r, c) {
+      placedTiles.push({ r, c });
+      if (placedTiles.length >= maxTiles) {
+        startMovementPhase();
+      } else {
+        currentPlayer = currentPlayer === 1 ? 2 : 1;
+        infoPanel.textContent = `Placement Phase: Player ${currentPlayer}'s turn (${placedTiles.length}/${maxTiles})`;
+        render();
+
+        if (phase === 'placement' && currentPlayer === 2 && isVsCpu) {
+          setTimeout(cpuPlaceTile, 400);
+        }
+      }
+    }
+
+    function cpuPlaceTile() {
+      const validKeys = Array.from(getValidPlacements());
+      if (validKeys.length > 0) {
+        // Evaluate candidate placements to favor branching outward
+        let candidates = validKeys.map(key => {
+          const [r, c] = key.split(',').map(Number);
+          const placedNeighborCount = getNeighbors(r, c).filter(n => isPlaced(n.r, n.c)).length;
+          return { r, c, placedNeighborCount };
+        });
+
+        // Filter for candidates with minimum touching placed neighbors (avoids 2x2 filling)
+        const minNeighbors = Math.min(...candidates.map(c => c.placedNeighborCount));
+        const branchCandidates = candidates.filter(c => c.placedNeighborCount === minNeighbors);
+
+        const chosen = branchCandidates[Math.floor(Math.random() * branchCandidates.length)];
+        placeTile(chosen.r, chosen.c);
+      }
+    }
+
+    function startMovementPhase() {
+      phase = 'movement';
+
+      // Pick P1 random pos
+      p1Pos = placedTiles[Math.floor(Math.random() * placedTiles.length)];
+
+      // Pick P2 pos with min radius 4
+      const validP2 = placedTiles.filter(t => {
+        const dist = Math.abs(t.r - p1Pos.r) + Math.abs(t.c - p1Pos.c);
+        return dist >= 4;
+      });
+
+      if (validP2.length > 0) {
+        p2Pos = validP2[Math.floor(Math.random() * validP2.length)];
+      } else {
+        // Fallback max distance
+        p2Pos = placedTiles.reduce((maxT, t) => {
+          const d1 = Math.abs(t.r - p1Pos.r) + Math.abs(t.c - p1Pos.c);
+          const d2 = Math.abs(maxT.r - p1Pos.r) + Math.abs(maxT.c - p1Pos.c);
+          return d1 > d2 ? t : maxT;
+        }, placedTiles[0]);
+      }
+
+      currentPlayer = 1;
+      infoPanel.textContent = `Movement Phase: Player 1's turn!`;
+      render();
+    }
+
+    // --- COMBINED MOVE + DASH LOGIC ---
+    // Checks both 1-step (walk) and 2-step (dash) moves simultaneously
+    function getValidMoves(pos) {
+      const moves = [];
+      const directions = [
+        { dr: -1, dc: 0 }, // Up
+        { dr: 1, dc: 0 },  // Down
+        { dr: 0, dc: -1 }, // Left
+        { dr: 0, dc: 1 }   // Right
+      ];
+
+      directions.forEach(d => {
+        // 1-tile walk check
+        const walkR = pos.r + d.dr;
+        const walkC = pos.c + d.dc;
+        if (isPlaced(walkR, walkC)) {
+          moves.push({ r: walkR, c: walkC, type: 'walk' });
+        }
+
+        // 2-tile dash check (straight line)
+        const dashR = pos.r + (d.dr * 2);
+        const dashC = pos.c + (d.dc * 2);
+        if (isPlaced(dashR, dashC)) {
+          moves.push({ r: dashR, c: dashC, type: 'dash' });
+        }
+      });
+
+      return moves;
+    }
+
+    function handleMove(r, c) {
+      const targetPos = { r, c };
+
+      if (currentPlayer === 1) p1Pos = targetPos;
+      else p2Pos = targetPos;
+
+      // Win check
+      if (p1Pos.r === p2Pos.r && p1Pos.c === p2Pos.c) {
+        phase = 'gameover';
+        infoPanel.textContent = `player ${currentPlayer} wins!`;
+        render();
+        return;
+      }
+
+      currentPlayer = currentPlayer === 1 ? 2 : 1;
+      infoPanel.textContent = `Movement Phase: Player ${currentPlayer}'s turn!`;
+      render();
+
+      if (phase === 'movement' && currentPlayer === 2 && isVsCpu) {
+        setTimeout(cpuMove, 500);
+      }
+    }
+
+    function cpuMove() {
+      const moves = getValidMoves(p2Pos);
+
+      // Check for an immediate win move
+      const winMove = moves.find(m => m.r === p1Pos.r && m.c === p1Pos.c);
+      const chosenMove = winMove || moves[Math.floor(Math.random() * moves.length)];
+
+      if (chosenMove) {
+        handleMove(chosenMove.r, chosenMove.c);
+      }
+    }
+
+    function render() {
+      gridEl.innerHTML = '';
+      const validPlacements = phase === 'placement' ? getValidPlacements() : new Set();
+      const currentPos = currentPlayer === 1 ? p1Pos : p2Pos;
+      const validMoves = (phase === 'movement' && (!isVsCpu || currentPlayer === 1)) ? getValidMoves(currentPos) : [];
+
+      for (let r = 0; r < GRID_SIZE; r++) {
+        for (let c = 0; c < GRID_SIZE; c++) {
+          const cell = document.createElement('div');
+          cell.className = 'cell';
+
+          const placed = isPlaced(r, c);
+          if (placed) cell.classList.add('placed');
+
+          if (phase === 'placement') {
+            if (validPlacements.has(getKey(r, c))) {
+              cell.classList.add('valid-place');
+              cell.addEventListener('click', () => placeTile(r, c));
+            }
+          }
+
+          if (phase === 'movement' || phase === 'gameover') {
+            if (p1Pos && r === p1Pos.r && c === p1Pos.c) {
+              cell.classList.add('p1');
+              cell.textContent = 'P1';
+            }
+            if (p2Pos && r === p2Pos.r && c === p2Pos.c) {
+              if (cell.classList.contains('p1')) {
+                cell.textContent = 'X'; // Collided
+              } else {
+                cell.classList.add('p2');
+                cell.textContent = 'P2';
+              }
+            }
+
+            if (phase === 'movement') {
+              const matchedMove = validMoves.find(m => m.r === r && m.c === c);
+              if (matchedMove) {
+                if (matchedMove.type === 'dash') {
+                  cell.classList.add('valid-dash');
+                } else {
+                  cell.classList.add('valid-move');
+                }
+                cell.addEventListener('click', () => handleMove(r, c));
+              }
+            }
+          }
+
+          gridEl.appendChild(cell);
+        }
+      }
+    }
+
+    // Initialize blank board
+    render();
+  </script>
+</body>
+</html>
